@@ -1,0 +1,20 @@
+[package]
+name = "builder_seed"
+version = "0.1.0"
+authors = ["skylerto <skylerclayne@gmail.com>"]
+
+[dependencies]
+postgres = "0.15"
+chrono = "0.4"
+clap = "2.32"
+
+[dependencies.habitat_core]
+git = "https://github.com/habitat-sh/core.git"
+
+[dependencies.builder_core]
+git = "https://github.com/habitat-sh/builder"
+
+[dependencies.habitat-builder-protocol]
+git = "https://github.com/habitat-sh/builder"
+
+
