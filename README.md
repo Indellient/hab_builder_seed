@@ -5,8 +5,8 @@ This binary provides a way to seed the builder database with a user account and 
 ## Usage
 
 ```
-$ builder_seed --db-url localhost:5432 --db-user hab --db-name builder --db-pass $( cat
-/hab/svc/builder-datastore/files/pwfile ) seed 'username'
+$ builder_seed --db-host localhost --db-port 5432 --db-user hab --db-name builder --db-pass $( cat
+/hab/svc/builder-datastore/files/pwfile ) --keys-dir /hab/svc/builder-api/files seed 'username'
 ```
 
 ## Notes
