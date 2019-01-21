@@ -100,10 +100,11 @@ fn main() {
                 email: "".to_string(),
                 id: 0,
             };
-            let created_user = create_user(acc, db);
+            let created_user = create_user(acc, &db);
             println!("Successfully Created User {}", created_user.name);
 
             let generated_token = generate_token(&created_user, keys_dir);
+            create_account_token(&created_user, &generated_token, &db);
             println!("Successfully Generated Token {}", generated_token);
 
         } else {
@@ -123,6 +124,12 @@ pub struct Account {
     pub name: String,
 }
 
+pub struct AccountToken {
+    pub id: i64,
+    pub account_id: i64,
+    pub token: String,
+}
+
 pub struct Database {
     pub host: String,
     pub port: String,
@@ -131,7 +138,7 @@ pub struct Database {
     pub pass: String,
 }
 
-fn create_user(acc: Account, db: Database) -> Account {
+fn create_user(acc: Account, db: &Database) -> Account {
     let conn = Connection::connect(format!("postgres://{}:{}@{}:{}/{}", db.user, db.pass, db.host, db.port, db.name), TlsMode::None).unwrap();
     let mut person = find_account(&acc, &conn);
     if person.name == "" {
@@ -150,7 +157,7 @@ fn find_account(acc: &Account, conn: &Connection) -> Account {
         name: "".to_string(),
         email: "".to_string(),
     };
-    for row in &conn.query("SELECT id, name, email FROM accounts", &[]).unwrap() {
+    for row in &conn.query("SELECT id, name, email FROM accounts WHERE name = $1", &[&acc.name]).unwrap() {
         person = Account {
             id: row.get(0),
             name: row.get(1),
@@ -178,7 +185,45 @@ fn generate_token(account: &Account, key_dir: &str) -> String {
     let bytes = message::encode(&token);
     let ciphertext = encrypt(key_dir, &bytes.unwrap());
 
-    return ciphertext.unwrap();
+    return format!("_{}", ciphertext.unwrap());
+}
+
+fn create_account_token(acc: &Account, token: &String, db: &Database) -> AccountToken {
+    let conn = Connection::connect(format!("postgres://{}:{}@{}:{}/{}", db.user, db.pass, db.host, db.port, db.name), TlsMode::None).unwrap();
+    let mut account_token = find_account_token(&acc, &conn);
+    if account_token.token == "" {
+        conn.execute("INSERT INTO account_tokens (account_id, token) VALUES ($1, $2)",
+                     &[&acc.id, &token]).unwrap();
+    } else {
+        conn.execute("DELETE FROM account_tokens WHERE account_id= $1",
+                     &[&acc.id]).unwrap();
+        conn.execute("INSERT INTO account_tokens (account_id, token) VALUES ($1, $2)",
+                     &[&acc.id, &token]).unwrap();
+    }
+    account_token = find_account_token(&acc, &conn);
+
+    println!("Found account token for {}", account_token.account_id);
+    return account_token;
+}
+
+fn find_account_token(acc: &Account, conn: &Connection) -> AccountToken {
+    let mut tok = AccountToken {
+        id: 0,
+        account_id: 0,
+        token: "".to_string(),
+    };
+    for row in &conn.query("SELECT id, account_id, token FROM account_tokens WHERE account_id = $1", &[&acc.id]).unwrap() {
+        tok = AccountToken {
+            id: row.get(0),
+            account_id: row.get(1),
+            token: row.get(2),
+        };
+
+        if tok.account_id == acc.id {
+            return tok;
+        }
+    }
+    return tok;
 }
 
 fn extract_info_from_token(token: &str, key_dir: &str) {
