@@ -1,81 +1,74 @@
-// use base64;
-// extern crate sodiumoxide;
+extern crate clap;
+extern crate postgres;
 extern crate builder_core;
 extern crate habitat_builder_protocol;
-use std::path::PathBuf;
+
+use clap::{Arg, App, SubCommand, crate_version};
+use postgres::{Connection, TlsMode};
 use crate::builder_core::integrations::{decrypt, encrypt};
 use crate::habitat_builder_protocol::{message, originsrv};
-// use crate::builder_core::integrations::{decrypt, encrypt, validate};
-extern crate postgres;
-
-use postgres::{Connection, TlsMode};
-// extern crate percent_encoding;
-// use percent_encoding::{percent_encode, DEFAULT_ENCODE_SET};
-// use url::percent_encoding::{percent_encode, DEFAULT_ENCODE_SET};
-
-// extern crate chrono;
-// use chrono::NaiveDateTime;
-
-
-// use crate::builder_core;
-//
-// use std::error::Error;
-// use sodiumoxide::crypto::box_;
-// use sodiumoxide::crypto::box_::curve25519xsalsa20poly1305::Nonce;
-// use sodiumoxide::crypto::box_::curve25519xsalsa20poly1305::PublicKey; // as BoxPublicKey;
-// use sodiumoxide::crypto::box_::curve25519xsalsa20poly1305::SecretKey; // as BoxSecretKey;
-// use sodiumoxide::crypto::sealedbox;
-// use crate::habitat_core::crypto::BoxKeyPair;
-// use crate::bldr_core::access_token::{BUILDER_ACCOUNT_ID, BUILDER_ACCOUNT_NAME};
-//
-//
-extern crate clap;
-use clap::{Arg, App, SubCommand};
 
 fn main() {
-    let msg = "Hello, world!";
-    println!("{}", msg);
     let matches = App::new("BLDR Seed")
-                      .version("1.0")
+                      .version(crate_version!())
                       .author("Skyler L. <skylerl@indellient.com>")
                       .about("Seed bldr database with auth token and initial user")
-                      .arg(Arg::with_name("db-url")
-                           .short("u")
-                           .long("db-url")
-                           .help("Sets database URL")
+                      .arg(Arg::with_name("db-host")
+                           .short("h")
+                           .long("db-host")
+                           .value_name("DB HOST")
+                           .help("Sets database Host")
+                           .takes_value(true))
+                      .arg(Arg::with_name("db-port")
+                           .short("po")
+                           .long("db-port")
+                           .value_name("DB PORT")
+                           .help("Sets database Port")
                            .takes_value(true))
                       .arg(Arg::with_name("db-user")
-                           .short("a")
+                           .short("u")
                            .long("db-user")
-                           .value_name("FILE")
+                           .value_name("DB USERNAME")
                            .help("Sets database User")
                            .takes_value(true))
                       .arg(Arg::with_name("db-name")
                            .short("n")
                            .long("db-name")
-                           .value_name("FILE")
+                           .value_name("DB NAME")
                            .help("Sets database name")
                            .takes_value(true))
                       .arg(Arg::with_name("db-pass")
                            .short("p")
                            .long("db-pass")
-                           .value_name("FILE")
+                           .value_name("DB PASSWORD")
                            .help("Sets database password")
+                           .takes_value(true))
+                      .arg(Arg::with_name("keys-dir")
+                           .short("k")
+                           .long("keys-dir")
+                           .value_name("KEYS DIR")
+                           .help("Sets the path to the BLDR Keys")
                            .takes_value(true))
                       .subcommand(SubCommand::with_name("seed")
                                   .about("Seeds the database with a user and auth token")
-                                  .version("1.0")
+                                  .version(crate_version!())
                                   .author("Skyler L. <skylerl@indellient.com>")
                                   .arg(Arg::with_name("seed_user")
                                       .help("print debug information verbosely")))
+                      .subcommand(SubCommand::with_name("extract")
+                                  .about("Extracts information from a token")
+                                  .version(crate_version!())
+                                  .author("Skyler L. <skylerl@indellient.com>")
+                                  .arg(Arg::with_name("token")
+                                      .help("print debug information verbosely")))
                       .get_matches();
 
-
-
-
     // Gets a value for config if supplied by user, or defaults to "default.conf"
-    let db_url = matches.value_of("db-url").unwrap_or("localhost:5432");
-    println!("Value for db_url: {}", db_url);
+    let db_host = matches.value_of("db-host").unwrap_or("localhost");
+    println!("Value for db_host: {}", db_host);
+
+    let db_port = matches.value_of("db-port").unwrap_or("5432");
+    println!("Value for db_port: {}", db_port);
 
     let db_user = matches.value_of("db-user").unwrap_or("hab");
     println!("Value for db_user: {}", db_user);
@@ -86,34 +79,42 @@ fn main() {
     let db_pass = matches.value_of("db-pass").unwrap_or("");
     println!("Value for db_pass: {}", db_pass);
 
-    // You can handle information about subcommands by requesting their matches by name
-    // (as below), requesting just the name used, or both at the same time
-    if let Some(matches) = matches.subcommand_matches("seed") {
+    let keys_dir = matches.value_of("keys-dir").unwrap_or("/hab/svc/builder-api/files");
+    println!("Value for keys_dir: {}", keys_dir);
 
+    if let Some(matches) = matches.subcommand_matches("seed") {
         let seed_user = matches.value_of("seed_user").unwrap_or("");
         if matches.is_present("seed_user") {
             println!("Seeding with user: {}", seed_user);
+
+            let db = Database {
+                host: db_host.to_string(),
+                port: db_port.to_string(),
+                user: db_user.to_string(),
+                name: db_name.to_string(),
+                pass: percent_encode(db_pass),
+            };
+
+            let acc = Account {
+                name: seed_user.to_string(),
+                email: "".to_string(),
+                id: 0,
+            };
+            let created_user = create_user(acc, db);
+            println!("Successfully Created User {}", created_user.name);
+
+            let generated_token = generate_token(&created_user, keys_dir);
+            println!("Successfully Generated Token {}", generated_token);
+
         } else {
             println!("Please pass a user to seed with");
         }
+    } else if let Some(matches) = matches.subcommand_matches("extract") {
+        let token = matches.value_of("token").unwrap_or("");
+        if matches.is_present("token") {
+            extract_info_from_token(token, keys_dir);
+        }
     }
-
-
-
-
-
-
-
-    // let token = "_Qk9YLTEKYmxkci0yMDE4MTEyOTE1NTM0MgpibGRyLTIwMTgxMTI5MTU1MzQyClVxMmZUd21naG1hL3p4U2pua25sODVCWTRXNlJtdVdDCnh5RzE4VXpTeGRkNXBKcU5vdmFDZ2hTSEV2Y0Z0b1dHTUFYWXAyUk5OdnFodmxmRw==";
-    // let token = "_Qk9YLTEKYmxkci0yMDE4MTEyOTE1NTM0MgpibGRyLTIwMTgxMTI5MTU1MzQyCmlkSjhPU3htQXVGV0lCYjdiaXFuc20zQmxmYUpHT0cxCnhSOEIvQUdVZW9GOFhXbFZsL1N0NlJKenB2SVJGc3pzeS9lV2kxdG9HOW5OWWc9PQ==";
-    // extract_info_from_token(token);
-    // generate_token();
-    // let acc = Account {
-    //     name: "sky".to_string(),
-    //     email: "".to_string(),
-    //     id: 0,
-    // };
-    // create_user(acc);
 }
 
 pub struct Account {
@@ -122,25 +123,16 @@ pub struct Account {
     pub name: String,
 }
 
-fn create_user(acc: Account) {
-    let user = "hab";
-    let pass = percent_encode("AlS16jkaGeXfe/ZlwvJ2ghi3IQrrxcqQIvKL9y96DhM=");
-    let host = "10.10.1.142";
-    let port = 5432;
-    let db = "builder";
+pub struct Database {
+    pub host: String,
+    pub port: String,
+    pub user: String,
+    pub name: String,
+    pub pass: String,
+}
 
-
-    let conn = Connection::connect(format!("postgres://{}:{}@{}:{}/{}", user, pass, host, port, db), TlsMode::None).unwrap();
-    // conn.execute("CREATE TABLE person (
-    //                 id              SERIAL PRIMARY KEY,
-    //                 name            VARCHAR NOT NULL,
-    //                 data            BYTEA
-    //               )", &[]).unwrap();
-    // let me = Person {
-    //     id: 0,
-    //     name: "Steven".to_string(),
-    //     data: None,
-    // };
+fn create_user(acc: Account, db: Database) -> Account {
+    let conn = Connection::connect(format!("postgres://{}:{}@{}:{}/{}", db.user, db.pass, db.host, db.port, db.name), TlsMode::None).unwrap();
     let mut person = find_account(&acc, &conn);
     if person.name == "" {
         conn.execute("INSERT INTO accounts (name, email) VALUES ($1, $2)",
@@ -149,9 +141,10 @@ fn create_user(acc: Account) {
     person = find_account(&acc, &conn);
 
     println!("Found person {}: {}", person.id, person.name);
+    return person;
 }
-fn find_account(acc: &Account, conn: &Connection) -> Account {
 
+fn find_account(acc: &Account, conn: &Connection) -> Account {
     let mut person = Account {
         id: 0,
         name: "".to_string(),
@@ -170,26 +163,25 @@ fn find_account(acc: &Account, conn: &Connection) -> Account {
     }
     return person;
 }
-fn generate_token() {
-    let key_dir = PathBuf::from(r"/Users/skylerl/dev/rust/hello_cargo/keys");
-    let account_id = 1162273542817996800;
+
+fn generate_token(account: &Account, key_dir: &str) -> String {
+    // These values are hard coded, not exactly sure what they mean.
+    // Extracted from an existing token in the builder database.
     let flags = 0;
     let expires = 8210298326400;
 
     let mut token = originsrv::AccessToken::new();
-    token.set_account_id(account_id);
+    token.set_account_id(account.id as u64);
     token.set_flags(flags);
     token.set_expires(expires);
 
     let bytes = message::encode(&token);
     let ciphertext = encrypt(key_dir, &bytes.unwrap());
 
-    println!("_{}", ciphertext.unwrap());
+    return ciphertext.unwrap();
 }
 
-fn extract_info_from_token(token: &str) {
-
-    let key_dir = PathBuf::from(r"/Users/skylerl/dev/rust/hello_cargo/keys");
+fn extract_info_from_token(token: &str, key_dir: &str) {
     let (_, encoded) = token.split_at(1);
     let bytes = decrypt(key_dir, encoded);
 
