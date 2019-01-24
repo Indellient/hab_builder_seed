@@ -65,28 +65,15 @@ fn main() {
 
     // Gets a value for config if supplied by user, or defaults to "default.conf"
     let db_host = matches.value_of("db-host").unwrap_or("localhost");
-    println!("Value for db_host: {}", db_host);
-
     let db_port = matches.value_of("db-port").unwrap_or("5432");
-    println!("Value for db_port: {}", db_port);
-
     let db_user = matches.value_of("db-user").unwrap_or("hab");
-    println!("Value for db_user: {}", db_user);
-
     let db_name = matches.value_of("db-name").unwrap_or("builder");
-    println!("Value for db_name: {}", db_name);
-
     let db_pass = matches.value_of("db-pass").unwrap_or("");
-    println!("Value for db_pass: {}", db_pass);
-
     let keys_dir = matches.value_of("keys-dir").unwrap_or("/hab/svc/builder-api/files");
-    println!("Value for keys_dir: {}", keys_dir);
 
     if let Some(matches) = matches.subcommand_matches("seed") {
         let seed_user = matches.value_of("seed_user").unwrap_or("");
         if matches.is_present("seed_user") {
-            println!("Seeding with user: {}", seed_user);
-
             let db = Database {
                 host: db_host.to_string(),
                 port: db_port.to_string(),
@@ -101,11 +88,9 @@ fn main() {
                 id: 0,
             };
             let created_user = create_user(acc, &db);
-            println!("Successfully Created User {}", created_user.name);
-
             let generated_token = generate_token(&created_user, keys_dir);
             create_account_token(&created_user, &generated_token, &db);
-            println!("Successfully Generated Token {}", generated_token);
+            println!("{}", generated_token);
 
         } else {
             println!("Please pass a user to seed with");
@@ -147,7 +132,7 @@ fn create_user(acc: Account, db: &Database) -> Account {
     }
     person = find_account(&acc, &conn);
 
-    println!("Found person {}: {}", person.id, person.name);
+    // println!("Found person {}: {}", person.id, person.name);
     return person;
 }
 
@@ -202,7 +187,7 @@ fn create_account_token(acc: &Account, token: &String, db: &Database) -> Account
     }
     account_token = find_account_token(&acc, &conn);
 
-    println!("Found account token for {}", account_token.account_id);
+    // println!("Found account token for {}", account_token.account_id);
     return account_token;
 }
 
@@ -237,9 +222,9 @@ fn extract_info_from_token(token: &str, key_dir: &str) {
         }
     };
 
-    println!("Account ID: {}", payload.get_account_id());
-    println!("Expires: {}", payload.get_expires());
-    println!("Flags {}", payload.get_flags());
+    // println!("Account ID: {}", payload.get_account_id());
+    // println!("Expires: {}", payload.get_expires());
+    // println!("Flags {}", payload.get_flags());
 }
 
 fn percent_encode(my_str: &str) -> String {
